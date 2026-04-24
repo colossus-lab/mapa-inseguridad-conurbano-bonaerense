@@ -7,3 +7,5 @@ out
 .vercel
 next-env.d.ts
 scripts/tmp/
+.claude/
+tsconfig.tsbuildinfo
