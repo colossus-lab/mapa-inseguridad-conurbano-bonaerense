@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #faf8f4;
+  --color-fg-primary: #101215;
+  --color-fg-secondary: #3a3d43;
+  --color-fg-tertiary: #66696f;
+  --color-fg-quaternary: #83868e;
+  --color-surface-1: #f3f0ea;
+  --color-surface-2: #e9e6df;
+  --color-surface-3: #ddd8d0;
+  --color-border-subtle: #0303031a;
+  --color-border-default: #03030326;
+  --color-border-strong: #0303033d;
+  --color-emerald-400: #00d294;
+  --color-emerald-500: #00bb7f;
+  --color-emerald-600: #009767;
+  --color-emerald-700: #007956;
+  --color-emerald-900: #004e3b;
+  --color-brand-500: #2563eb;
+  --color-danger: #ef4444;
+  --color-success: #10b981;
+  --color-warning: #edb200;
+  --color-grid: #0043951f;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+html, body { height: 100%; }
+body {
+  background: linear-gradient(#fbf8f2 0%, #f8f5ee 45%, #f4efe7 100%) fixed;
+  color: var(--color-fg-primary);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "ss03", "cv05", "cv11", "calt";
+  letter-spacing: -0.006em;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Tipografía institucional */
+h1, h2, h3, h4 { letter-spacing: -0.018em; }
+.eyebrow {
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  font-weight: 500;
+  color: var(--color-fg-tertiary);
+}
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); }
+
+/* Grid paper subtle motif disponible para overlays */
+.paper-grid {
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Slider nativo estilizado */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 20px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  background: var(--color-surface-2);
+  height: 2px;
+  border-radius: 2px;
+}
+input[type="range"]::-moz-range-track {
+  background: var(--color-surface-2);
+  height: 2px;
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--color-emerald-500);
+  border: 2px solid #fbfaf6;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.18);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--color-emerald-500);
+  border: 2px solid #fbfaf6;
+  cursor: pointer;
+}
+
+/* Hairline divisor */
+.hairline {
+  height: 1px;
+  background: var(--color-border-default);
+  width: 100%;
+}
+
+/* MapLibre control ajustes para theme claro */
+.maplibregl-ctrl-attrib {
+  background: rgba(255,255,255,0.7) !important;
+  font-size: 10px !important;
+}
