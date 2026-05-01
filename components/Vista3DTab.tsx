@@ -23,17 +23,19 @@ type HexProps = {
 };
 
 export default function Vista3DTab() {
-  const { dataset } = useDashboard();
+  const { dataset, municipioSel, setMunicipio } = useDashboard();
 
   // Filtros locales al tab.
   const [delitoId, setDelitoId] = useState<string>("1");
   const [metric, setMetric] = useState<Metric>("tasa");
   const [anio, setAnio] = useState<number>(0);
+  const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const [geoPartidos, setGeoPartidos] = useState<GeoJSON.FeatureCollection | null>(null);
   const [hexGrid, setHexGrid] = useState<GeoJSON.FeatureCollection | null>(null);
   const [hoverPid, setHoverPid] = useState<string | null>(null);
   const mapRef = useRef<MapRef | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const focusPid = municipioSel ?? hoverPid;
 
   useEffect(() => {
     if (!dataset) return;
@@ -144,12 +146,30 @@ export default function Vista3DTab() {
     let globalMax = 0;
     for (const v of smoothed) if (v > globalMax) globalMax = v;
 
+    // Para color: rank por percentiles globales sobre valores positivos.
+    // Garantiza contraste cromático parejo aun con métricas sesgadas
+    // (un partido outlier ya no aplasta toda la paleta a verde).
+    const positives = smoothed.filter((v) => v > 0).slice().sort((a, b) => a - b);
+    const N = positives.length;
+    const percentileOf = (v: number): number => {
+      if (v <= 0 || N === 0) return 0;
+      let lo = 0, hi = N;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (positives[mid] < v) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo / N;
+    };
+
     const MAX_HEIGHT = 6500;
     const features: GeoJSON.Feature[] = hexGrid.features.map((f, i) => {
       const value = smoothed[i];
       const linear = globalMax > 0 ? value / globalMax : 0;
       // pow 0.4 — empuja valores medios al rango visible; pico intacto.
-      const visual = Math.pow(linear, 0.4);
+      // (sólo lo usamos para la altura física; el color va por percentil)
+      const visualHeight = Math.pow(linear, 0.4);
+      const intensity = percentileOf(value);
       const p = f.properties as HexProps;
       return {
         type: "Feature",
@@ -158,8 +178,8 @@ export default function Vista3DTab() {
           departamento_id: p.departamento_id,
           weight: p.weight,
           value,
-          intensity: visual,
-          height: value > 0 ? Math.max(30, visual * MAX_HEIGHT) : 0,
+          intensity,
+          height: value > 0 ? Math.max(30, visualHeight * MAX_HEIGHT) : 0,
         },
       };
     });
@@ -187,11 +207,22 @@ export default function Vista3DTab() {
     mapRef.current?.getMap()?.easeTo({
       center: [-58.55, -34.65],
       zoom: 9.3,
-      pitch: 55,
-      bearing: -18,
+      pitch: viewMode === "3d" ? 55 : 0,
+      bearing: viewMode === "3d" ? -18 : 0,
       duration: 800,
     });
   };
+
+  // Animar cambio de modo: en 2D aplanamos pitch/bearing; en 3D restauramos.
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    map.easeTo({
+      pitch: viewMode === "3d" ? 55 : 0,
+      bearing: viewMode === "3d" ? -18 : 0,
+      duration: 600,
+    });
+  }, [viewMode]);
 
   const delitoNombre = delitoId === "all"
     ? "Todos los delitos (suma SNIC)"
@@ -225,8 +256,26 @@ export default function Vista3DTab() {
               <div className="mt-0.5 text-[11px] text-ink-3">categorías registradas en SNIC</div>
             </div>
           </div>
-          <div className="text-[11px] text-ink-3">
-            Categoría seleccionada: <span className="font-semibold text-ink">{totalConurbano.toLocaleString("es-AR")}</span> hechos
+          <div className="flex items-center gap-3">
+            <div className="text-[11px] text-ink-3">
+              Categoría seleccionada: <span className="font-semibold text-ink">{totalConurbano.toLocaleString("es-AR")}</span> hechos
+            </div>
+            <div className="inline-flex overflow-hidden rounded-md border border-line bg-paper">
+              {(["2d", "3d"] as const).map((m, i) => (
+                <button
+                  key={m}
+                  onClick={() => setViewMode(m)}
+                  className={[
+                    "px-3 py-1.5 text-[11.5px] font-semibold uppercase tracking-wider transition",
+                    i === 0 ? "border-r border-line" : "",
+                    viewMode === m ? "bg-ink text-paper" : "text-ink-2 hover:text-ink",
+                  ].join(" ")}
+                  title={m === "2d" ? "Vista plana · zoom y análisis detallado" : "Vista volumétrica · relieve por delito"}
+                >
+                  {m.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -301,13 +350,23 @@ export default function Vista3DTab() {
           maxBounds={[[-59.3, -35.25], [-57.6, -34.0]]}
           minZoom={8.5}
           maxZoom={13}
-          maxPitch={70}
+          maxPitch={viewMode === "3d" ? 70 : 0}
           onMouseMove={(e) => {
             const f = e.features?.[0];
             setHoverPid(f ? ((f.properties?.departamento_id as string) ?? null) : null);
           }}
           onMouseLeave={() => setHoverPid(null)}
-          interactiveLayerIds={["hex-extrude"]}
+          onClick={(e) => {
+            const f = e.features?.[0];
+            const pid = (f?.properties?.departamento_id as string) ?? null;
+            if (!pid) {
+              if (municipioSel) setMunicipio(null);
+              return;
+            }
+            // Toggle: click sobre el seleccionado lo libera.
+            setMunicipio(pid === municipioSel ? null : pid);
+          }}
+          interactiveLayerIds={[viewMode === "3d" ? "hex-3d" : "hex-2d"]}
           style={{ height: "100%", width: "100%", background: "#0a1220" }}
         >
           {/* Capa base con fondo muy oscuro sobre la ya existente (pinta las zonas sin tile) */}
@@ -355,12 +414,14 @@ export default function Vista3DTab() {
                 paint={{
                   "line-color": [
                     "case",
-                    ["==", ["get", "departamento_id"], hoverPid ?? ""], "#00d294",
+                    ["==", ["get", "departamento_id"], municipioSel ?? "__none__"], "#00ffaa",
+                    ["==", ["get", "departamento_id"], hoverPid ?? "__none__"], "#00d294",
                     "#00bb7f",
                   ],
                   "line-width": [
                     "case",
-                    ["==", ["get", "departamento_id"], hoverPid ?? ""], 3.2,
+                    ["==", ["get", "departamento_id"], municipioSel ?? "__none__"], 4,
+                    ["==", ["get", "departamento_id"], hoverPid ?? "__none__"], 3.2,
                     2,
                   ],
                   "line-opacity": 0.95,
@@ -369,29 +430,61 @@ export default function Vista3DTab() {
             </Source>
           )}
 
-          {/* Hexes extruidos */}
+          {/* Hexes — extruidos en 3D, planos en 2D */}
           {hexWithHeights && (
             <Source id="hexgrid" type="geojson" data={hexWithHeights}>
-              <Layer
-                id="hex-extrude"
-                type="fill-extrusion"
-                paint={{
-                  "fill-extrusion-height": ["get", "height"],
-                  "fill-extrusion-base": 0,
-                  "fill-extrusion-color": [
-                    "interpolate", ["linear"], ["get", "intensity"],
-                    0, "#062a1f",
-                    0.15, "#007956",
-                    0.35, "#00bb7f",
-                    0.55, "#edb200",
-                    0.75, "#f97316",
-                    0.9, "#dc2626",
-                    1, "#7f1d1d",
-                  ],
-                  "fill-extrusion-opacity": 0.78,
-                  "fill-extrusion-vertical-gradient": true,
-                }}
-              />
+              {viewMode === "3d" ? (
+                <Layer
+                  id="hex-3d"
+                  type="fill-extrusion"
+                  paint={{
+                    "fill-extrusion-height": ["get", "height"],
+                    "fill-extrusion-base": 0,
+                    "fill-extrusion-color": [
+                      "interpolate", ["linear"], ["get", "intensity"],
+                      0, "#062a1f",
+                      0.15, "#007956",
+                      0.35, "#00bb7f",
+                      0.55, "#edb200",
+                      0.75, "#f97316",
+                      0.9, "#dc2626",
+                      1, "#7f1d1d",
+                    ],
+                    "fill-extrusion-opacity": municipioSel
+                      ? [
+                          "case",
+                          ["==", ["get", "departamento_id"], municipioSel], 0.9,
+                          0.22,
+                        ]
+                      : 0.78,
+                    "fill-extrusion-vertical-gradient": true,
+                  }}
+                />
+              ) : (
+                <Layer
+                  id="hex-2d"
+                  type="fill"
+                  paint={{
+                    "fill-color": [
+                      "interpolate", ["linear"], ["get", "intensity"],
+                      0, "#062a1f",
+                      0.15, "#007956",
+                      0.35, "#00bb7f",
+                      0.55, "#edb200",
+                      0.75, "#f97316",
+                      0.9, "#dc2626",
+                      1, "#7f1d1d",
+                    ],
+                    "fill-opacity": municipioSel
+                      ? [
+                          "case",
+                          ["==", ["get", "departamento_id"], municipioSel], 0.92,
+                          0.18,
+                        ]
+                      : 0.85,
+                  }}
+                />
+              )}
             </Source>
           )}
 
@@ -435,7 +528,7 @@ export default function Vista3DTab() {
         {/* Leyenda */}
         <div className="pointer-events-none absolute left-4 top-4 w-[280px] rounded-lg border border-emerald-900/40 bg-[#0a1220]/90 p-3 shadow-float backdrop-blur">
           <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-emerald-400">
-            Vista 3D · {anio}
+            Vista {viewMode.toUpperCase()} · {anio}
           </div>
           <div className="mt-1 truncate text-[13px] font-semibold text-white" title={delitoNombre}>
             {delitoNombre}
@@ -457,10 +550,11 @@ export default function Vista3DTab() {
           </div>
         </div>
 
-        {/* HoverCard */}
-        {hoverPid && dataset && (
+        {/* HoverCard — persistente si hay partido seleccionado */}
+        {focusPid && dataset && (
           <HoverInfo
-            pid={hoverPid}
+            pid={focusPid}
+            pinned={!!municipioSel && focusPid === municipioSel}
             dataset={dataset}
             delitoId={delitoId}
             anio={anio}
@@ -468,17 +562,27 @@ export default function Vista3DTab() {
           />
         )}
 
-        {/* Reset vista */}
-        <button
-          onClick={resetView}
-          className="absolute bottom-4 right-4 rounded-md border border-emerald-900/40 bg-[#0a1220]/90 px-3 py-1.5 text-[11px] font-medium text-emerald-300 transition hover:bg-emerald-900/50 hover:text-white"
-        >
-          ↺ Reset vista
-        </button>
+        {/* Botones inferior derecha */}
+        <div className="absolute bottom-4 right-4 flex gap-2">
+          {municipioSel && (
+            <button
+              onClick={() => setMunicipio(null)}
+              className="rounded-md border border-emerald-500/60 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-medium text-emerald-200 transition hover:bg-emerald-500/30 hover:text-white"
+            >
+              ✕ Limpiar selección
+            </button>
+          )}
+          <button
+            onClick={resetView}
+            className="rounded-md border border-emerald-900/40 bg-[#0a1220]/90 px-3 py-1.5 text-[11px] font-medium text-emerald-300 transition hover:bg-emerald-900/50 hover:text-white"
+          >
+            ↺ Reset vista
+          </button>
+        </div>
 
         {/* Instructivo */}
         <div className="pointer-events-none absolute bottom-4 left-4 max-w-[420px] rounded-md border border-emerald-900/40 bg-[#0a1220]/90 px-3 py-1.5 text-[10.5px] leading-relaxed text-emerald-300/80">
-          <strong className="text-emerald-200">Pan</strong>: arrastrar · <strong className="text-emerald-200">Zoom</strong>: rueda · <strong className="text-emerald-200">Rotar</strong>: click derecho + arrastrar (o compás) · <strong className="text-emerald-200">Inclinar</strong>: Ctrl + arrastrar
+          <strong className="text-emerald-200">Click</strong>: fijar partido · <strong className="text-emerald-200">Pan</strong>: arrastrar · <strong className="text-emerald-200">Zoom</strong>: rueda · <strong className="text-emerald-200">Rotar</strong>: click derecho · <strong className="text-emerald-200">Inclinar</strong>: Ctrl + arrastrar
         </div>
       </div>
 
@@ -523,9 +627,10 @@ function useMemoTotalAllDelitos(dataset: Dataset | null, anio: number) {
 }
 
 function HoverInfo({
-  pid, dataset, delitoId, anio, metric,
+  pid, pinned, dataset, delitoId, anio, metric,
 }: {
   pid: string;
+  pinned: boolean;
   dataset: Dataset;
   delitoId: string;
   anio: number;
@@ -555,9 +660,12 @@ function HoverInfo({
   const unidad = metric === "tasa" ? " /100k" : " hechos";
 
   return (
-    <div className="pointer-events-none absolute right-4 top-4 w-[230px] rounded-lg border border-emerald-900/40 bg-[#0a1220]/92 p-3 shadow-float backdrop-blur">
+    <div className={
+      "pointer-events-none absolute right-4 top-4 w-[230px] rounded-lg border bg-[#0a1220]/92 p-3 shadow-float backdrop-blur " +
+      (pinned ? "border-emerald-400/70 ring-1 ring-emerald-400/30" : "border-emerald-900/40")
+    }>
       <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-emerald-400">
-        Partido
+        {pinned ? "Partido seleccionado" : "Partido"}
       </div>
       <div className="mt-0.5 text-[14px] font-semibold text-white">{partido.nombre}</div>
       <div className="mt-2 text-[11px] text-emerald-300/70">
